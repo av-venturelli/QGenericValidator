@@ -11,6 +11,9 @@ qt_add_executable(QGenericValidator
     mainwindowpanel.cpp
     mainwindowpanel.h
     mainwindowpanel.ui
+    ProjectDocument.md
+    ValidatorTraits.h
+    ValidationResult.h
 )
 
 target_link_libraries(QGenericValidator
