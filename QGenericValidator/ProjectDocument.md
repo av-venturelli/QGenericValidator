@@ -39,7 +39,7 @@ A simple data-carrying struct to pass state from the logic to the UI.
 
 ---
 
-## 4. Development Roadmap & Priorities
+### 4. Development Roadmap and Priorities
 
 | Priority | Phase | Tasks |
 | :--- | :--- | :--- |
@@ -51,7 +51,7 @@ A simple data-carrying struct to pass state from the logic to the UI.
 
 ---
 
-## 5. Expected Usage (Pseudo-Code)
+### 5. Expected Usage (Pseudo-Code)
 ```cpp
 // Initialize
 auto* vm = new ValidationManager(this);
