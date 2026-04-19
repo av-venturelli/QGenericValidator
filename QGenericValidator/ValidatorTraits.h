@@ -12,7 +12,7 @@
 
 /// @brief default generic version that is invalid
 template <typename T>
-class ValidatorTraits {
+struct ValidatorTraits {
     static constexpr bool has_default = false;
 };
 
@@ -21,7 +21,7 @@ class ValidatorTraits {
 
 /// @brief specialization for QLineEdit, default signal is textChanged
 template <>
-class ValidatorTraits<QLineEdit> {
+struct ValidatorTraits<QLineEdit> {
     static constexpr bool has_default = true;
 
     /// @brief default signal used is textChanged
@@ -63,7 +63,7 @@ class ValidatorTraits<QLineEdit> {
 
 /// @brief specialization for QComboBox, default signal is currentIndexChanged
 template <>
-class ValidatorTraits<QComboBox> {
+struct ValidatorTraits<QComboBox> {
     static constexpr bool has_default = true;
 
     /**
@@ -116,7 +116,7 @@ class ValidatorTraits<QComboBox> {
 
 /// @brief specialization for QCheckBox, default signal is toggled
 template <>
-class ValidatorTraits<QCheckBox> {
+struct ValidatorTraits<QCheckBox> {
     static constexpr bool has_default = true;
 
     /**
@@ -168,7 +168,7 @@ class ValidatorTraits<QCheckBox> {
 
 /// @brief specialization for QButtonGroup, default signal is idClicked
 template <>
-class ValidatorTraits<QButtonGroup> {
+struct ValidatorTraits<QButtonGroup> {
     static constexpr bool has_default = true;
 
     /**
