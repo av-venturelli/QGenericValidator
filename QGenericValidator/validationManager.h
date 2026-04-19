@@ -3,101 +3,155 @@
 
 #include <QObject>
 #include <QWidget>
+#include <QPointer>
+#include <vector>
+#include <memory>
+#include <algorithm>
+#include <functional>
+#include <QDebug>
+
 #include "ValidationResult.h"
+#include "ValidatorTraits.h"
 
 class ValidationManager : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit ValidationManager(QObject *parent = nullptr);
-    ~ValidationManager();
+    explicit ValidationManager(QObject *parent = nullptr) : QObject{parent} {}
+    ~ValidationManager() = default;
 
-    /*!
-     * @brief returns the current validation state
-    */
-    bool isValid() const;
+    bool isValid() const { return m_isValid; }
 
-    /*!
-     * @brief Register a QObject based type and when the specidied signal il triggered, validate
-     * all the registered qobjects executing the @p validator_func provided
-     * @param[in] q_obj -> a pointer to a QObject or a subclass of it.
-     * @param[in] q_signal_tirgger -> the signal that will trigger the validation process.
-     * @param[in] validator_func -> the callback used to determine if the passed widget is valid or not.
-    */
-    template <typename QObj, typename Signal>
-    bool registerQObject( QObj* q_obj, Signal q_signal_trigger, std::function<ValidationResult(QObj*)> validator_func);
+    // 3-Argument Registration
+    template <typename QObjT, typename Signal, typename ValidatorFunc>
+    bool registerQObject(QObjT *q_obj, Signal q_signal_trigger, ValidatorFunc validator_func) {
+        static_assert(std::is_base_of_v<QObject, QObjT>, "Wdg must derive from QObject.");
+        static_assert(std::is_member_function_pointer<Signal>::value, "Signal must be a pointer to a member function.");
 
-    template <typename QObj>
-    bool registerQObject( QObj* q_obj);
+        if (!q_obj) return false;
+
+        // Check for duplicates
+        auto it = std::find_if(m_vect_validator.begin(), m_vect_validator.end(),
+                               [q_obj](const std::unique_ptr<IFieldValidator>& ptr) {
+                                   return ptr->get_qobject() == q_obj;
+                               });
+
+        if (it != m_vect_validator.end()) return false;
+
+        // Connect to the central processor
+        QMetaObject::Connection conn = QObject::connect(
+            q_obj, q_signal_trigger, this, &ValidationManager::process);
+
+        if (!conn) return false;
+
+        m_vect_validator.emplace_back(
+            std::make_unique<FieldModel<QObjT>>(q_obj, validator_func, conn)
+            );
+        return true;
+    }
+
+    // 1-Argument Registration (Uses Traits)
+    template <typename QObjT>
+    bool registerQObject(QObjT* q_obj) {
+        static_assert(ValidatorTraits<QObjT>::has_default,
+                      "No default ValidatorTraits defined for this type.");
+
+        return registerQObject(
+            q_obj,
+            ValidatorTraits<QObjT>::default_signal(),
+            &ValidatorTraits<QObjT>::default_check
+            );
+    }
 
 signals:
     void validationFailed(QObject* qobj, QString const& message);
     void formValidityChanged(bool isValid);
     void validationsSuccessed();
+
 public slots:
-    /*!
-     * @brief checks all the registered widgets' validity.
-     * @b validationFailed(QWidget*, QString const&) is emitted at the exact moment when
-     * the validation returns false and exit the function.
-     * @b formValidityChanged(bool isValid) signal is emitted wether the state chenged
-     * from true to false or the other way around.
-    */
-    void process();
+    void process() {
+        removeZombieObjects();
 
-/*====================================
-*        TYPE ERASURE PATTERN
-======================================*/
+        if (m_vect_validator.empty()) {
+            if (!m_isValid) setIsValid(true);
+            return;
+        }
+
+        ValidationResult res = ValidationResult::Success();
+        for (auto& ifield_validator : m_vect_validator) {
+            res = ifield_validator->check();
+            if (!res.isValid) {
+                emit validationFailed(ifield_validator->get_qobject(), res.errorMessage);
+                break;
+            }
+        }
+
+        setIsValid(res.isValid);
+        if (isValid()) emit validationsSuccessed();
+    }
+
 private:
-    // abstract base class
+    /*====================================
+    * TYPE ERASURE PATTERN
+    ======================================*/
     struct IFieldValidator {
-        virtual ~IFieldValidator();
-
+        virtual ~IFieldValidator() = default;
         virtual ValidationResult check() = 0;
         virtual QObject* get_qobject() const = 0;
         virtual void disconnect_signal() = 0;
     };
 
-    // model class implementation
     template <typename QObjT>
     struct FieldModel : public IFieldValidator {
-        using ValidatorFunc = std::function<ValidationResult(QObjT)>;
+        using ValidatorFunc = std::function<ValidationResult(QObjT*)>;
 
-        // ctor
-        FieldModel(
-            QObjT* q_obj,
-            ValidatorFunc validator_func,
-            QMetaObject::Connection connection
-        );
-
-        virtual ~FieldModel();
-        virtual ValidationResult check() override;
-        virtual QObject* get_qobject() const override;
-        virtual void disconnect_signal() override;
-
-        // members
         QPointer<QObjT> qobj_ptr;
         ValidatorFunc validator_f;
         QMetaObject::Connection connection;
+
+        FieldModel(QObjT* q_obj, ValidatorFunc validator_func, QMetaObject::Connection connection)
+            : qobj_ptr(q_obj), validator_f(std::move(validator_func)), connection(connection) {}
+
+        ~FieldModel() override = default;
+
+        ValidationResult check() override {
+            if (qobj_ptr.isNull()) {
+                return ValidationResult::Failure("Checking a deleted object");
+            }
+            return validator_f(qobj_ptr.data());
+        }
+
+        QObject* get_qobject() const override {
+            return qobj_ptr.data();
+        }
+
+        void disconnect_signal() override {
+            if (connection) QObject::disconnect(connection);
+        }
     };
 
-/*====================================
-*            PRIVATE MEMBERS
-======================================*/
-private:
+    /*====================================
+    * PRIVATE HELPERS
+    ======================================*/
+    void setIsValid(bool isValid) {
+        if (isValid == m_isValid) return;
+        m_isValid = isValid;
+        emit formValidityChanged(m_isValid);
+    }
+
+    void removeZombieObjects() {
+        m_vect_validator.erase(
+            std::remove_if(m_vect_validator.begin(), m_vect_validator.end(),
+                           [](const std::unique_ptr<IFieldValidator>& v) {
+                               return v->get_qobject() == nullptr;
+                           }),
+            m_vect_validator.end()
+            );
+    }
+
     std::vector<std::unique_ptr<IFieldValidator>> m_vect_validator;
-    bool m_isValid{};
-
-
-    // private members' func
-    //-----------------------
-    void setIsValid(bool isValid);
-
-    /*!
-     * @brief When an QObject is detroyed by the user for some reason, the QPOinter<ToThatQObject>
-     * will became invalid (nullptr) so there is no need to keep it inside the collection.
-    */
-    void removeZombieObjects();
+    bool m_isValid{false};
 };
 
 #endif // VALIDATIONMANAGER_H
