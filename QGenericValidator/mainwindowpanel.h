@@ -3,11 +3,15 @@
 
 #include <QMainWindow>
 
+class ValidationManager;
+
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindowPanel;
 }
 QT_END_NAMESPACE
+
 
 class MainWindowPanel : public QMainWindow
 {
@@ -19,5 +23,6 @@ public:
 
 private:
     Ui::MainWindowPanel *ui;
+    ValidationManager* saveBtn_validator;
 };
 #endif // MAINWINDOWPANEL_H
