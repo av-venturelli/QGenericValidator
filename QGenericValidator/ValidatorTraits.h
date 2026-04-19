@@ -184,7 +184,7 @@ class ValidatorTraits<QButtonGroup> {
     *       Qt 5.15 and Qt 6.x, focusing on the ID of the clicked button.
     */
     static constexpr auto default_signal() {
-        return QOverload<int>::of(&QButtonGroup::idClicked);
+        return QOverload<QAbstractButton*>::of(&QButtonGroup::buttonClicked);
     };
 
     /**
